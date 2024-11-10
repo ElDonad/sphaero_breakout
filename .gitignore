@@ -1,0 +1,10 @@
+*.exe
+*.a
+*.wasm
+*.wasm.*
+*.dwarf
+wasm-sourcemap.py
+utils.py
+*.bat
+.vscode
+__pycache__
