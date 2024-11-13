@@ -58,7 +58,6 @@ void print(char *str)
 typedef struct
 {
     bool destroyed;
-    bool needs_erasing;
 
 } Brick;
 
@@ -67,8 +66,8 @@ typedef struct
     size_t bricks_count;
     size_t game_count;
     size_t current_color_func;
-    // Each brick gets 2 bits of data, to save space
-    uint8_t brick_save[BRICK_ROWS * BRICKS_PER_ROW / 8 * 2];
+    // Each brick gets 1 bit of data, to save space
+    uint8_t brick_save[BRICK_ROWS * BRICKS_PER_ROW / 8];
 } SaveState;
 
 static struct ball *balls_memory = NULL;
@@ -130,32 +129,31 @@ void load(void)
 Brick get_brick(SaveState *state, size_t x, size_t y)
 {
     size_t brick_indice = x + y * BRICKS_PER_ROW;
-    size_t brick_save_indice = brick_indice / 4;
-    size_t brick_save_bit = (brick_indice % 4) * 2;
+    size_t brick_save_indice = brick_indice / 8;
+    size_t brick_save_bit = (brick_indice % 8);
 
-    return (Brick){state->brick_save[brick_save_indice] & (1 << brick_save_bit),
-                   state->brick_save[brick_save_indice] & (1 << (brick_save_bit + 1))};
+    return (Brick){
+        state->brick_save[brick_save_indice] & (1 << brick_save_bit)};
 }
 
 // Can only set false to true, TODO fix
 void set_brick(SaveState *state, size_t x, size_t y, Brick brick)
 {
     size_t brick_indice = x + y * BRICKS_PER_ROW;
-    size_t brick_save_indice = brick_indice / 4;
-    size_t brick_save_bit = (brick_indice % 4) * 2;
+    size_t brick_save_indice = brick_indice / 8;
+    size_t brick_save_bit = (brick_indice % 8);
 
     state->brick_save[brick_save_indice] |= (brick.destroyed ? 1 : 0) << brick_save_bit;
-    state->brick_save[brick_save_indice] |= (brick.needs_erasing ? 1 : 0) << (brick_save_bit + 1);
 }
 
 void reset_bricks(SaveState *state)
 {
-    mymemset(state->brick_save, 0, BRICK_ROWS * BRICKS_PER_ROW / 4);
+    mymemset(state->brick_save, 0, BRICK_ROWS * BRICKS_PER_ROW / 8);
     for (size_t i = 0; i < BRICK_ROWS; i++)
     {
         for (size_t j = 0; j < BRICKS_PER_ROW; j++)
         {
-            set_brick(state, j, i, (Brick){false, false});
+            set_brick(state, j, i, (Brick){false});
         }
     }
 }
@@ -342,7 +340,6 @@ void step(size_t num_balls, float delta)
                 {
                     collided = true;
                     b.destroyed = true;
-                    b.needs_erasing = true;
                     set_brick(state, r, c, b);
                     state->bricks_count--;
                     break;
@@ -392,46 +389,26 @@ void render_brick(size_t x, size_t y, size_t canvas_width, size_t width, size_t 
  * frame data if that is useful to you
  */
 
-bool needs_full_render = true;
 size_t game_count = 0;
 void render(size_t canvas_width, size_t canvas_height)
 {
+    mymemset(canvas_memory, 0xffffffff, canvas_width * canvas_height * sizeof(int32_t));
     if (game_count != state->game_count)
     {
         game_count = state->game_count;
-        needs_full_render = true;
     }
-    if (needs_full_render)
+    for (size_t i = 0; i < BRICK_ROWS; i++)
     {
-        for (size_t i = 0; i < BRICK_ROWS; i++)
+        for (size_t j = 0; j < BRICKS_PER_ROW; j++)
         {
-            for (size_t j = 0; j < BRICKS_PER_ROW; j++)
-            {
-                render_brick((MARGIN_X + j * (BRICK_WIDTH + BRICK_GAP_X)) * canvas_width,
-                             (MARGIN_Y + i * (BRICK_HEIGHT + BRICK_GAP_Y)) * canvas_height / 0.7,
-                             canvas_width,
-                             BRICK_WIDTH * canvas_width, BRICK_HEIGHT * canvas_height / 0.7,
-                             get_color_for_brick(j, i));
-            }
-        }
-        needs_full_render = false;
-    }
-    else
-    {
-        for (size_t i = 0; i < BRICK_ROWS; i++)
-        {
-            for (size_t j = 0; j < BRICKS_PER_ROW; j++)
-            {
-                Brick brick = get_brick(state, j, i);
-                if (brick.needs_erasing)
-                {
-                    brick.needs_erasing = false;
-                    render_brick((MARGIN_X + j * (BRICK_WIDTH + BRICK_GAP_X)) * canvas_width,
-                                 (MARGIN_Y + i * (BRICK_HEIGHT + BRICK_GAP_Y)) * canvas_height / 0.7f,
-                                 canvas_width,
-                                 BRICK_WIDTH * canvas_width, BRICK_HEIGHT * canvas_height / 0.7f, 0);
-                }
-            }
+            const Brick b = get_brick(state, j, i);
+            if (b.destroyed)
+                continue;
+            render_brick((MARGIN_X + j * (BRICK_WIDTH + BRICK_GAP_X)) * canvas_width,
+                         (MARGIN_Y + i * (BRICK_HEIGHT + BRICK_GAP_Y)) * canvas_height / 0.7,
+                         canvas_width,
+                         BRICK_WIDTH * canvas_width, BRICK_HEIGHT * canvas_height / 0.7,
+                         get_color_for_brick(j, i));
         }
     }
 }
